@@ -1,8 +1,12 @@
-# Oblivious Signing With POETs and MuSig2
+# Sigbash V2 Public Beta
+
+This repository serves two purposes: first, the document you are reading is a view from 50,000 feet of the Sigbash V2 platform. Second, the issues are meant to report either actual bugs found in the implementation or conceptual flaws in the below document.
+
+## Oblivious Signing With POETs and MuSig2
 
 This README.md describes at a high level the Sigbash V2 platform's policy generation and proof creation flow, from initial signing policy specification to proof approval and transaction signing. 
 
-By leveraging merkle trees, simple graph theory, and integrating zero-knowledge proof gating into a MuSig2 signing ceremony, we are able to achieve perfect privacy from both the signing server and from blockchain analysis across arbitrary predicates, with remarkable performance properties. The system is robust in it's structural simplicity.
+By leveraging merkle trees and basic graph theory, and integrating zero-knowledge proof gating into a MuSig2 signing ceremony, we are able to achieve perfect privacy from both the signing server and from blockchain analysis across arbitrary predicates, with remarkable performance properties. The system is robust in it's structured simplicity.
 
 
 ## POET Creation and Policy Commitment
