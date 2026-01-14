@@ -100,7 +100,9 @@ This transformation process applies to both AND and OR trees:
 
 ## Path Enumeration and PathLeaf Structure
 
-Each satisfying path through the POET becomes a PathLeaf—a fixed-size structure containing all the constraints required for that specific path. A PathLeaf bundles together the numeric limits (spending ranges, fee requirements), time restrictions (weekday and hour windows), address list references (pointers to allowlist/denylist Merkle roots), and nullifier configuration for stateful constraints applicable to that path. When a client wants to prove their transaction satisfies the policy, they select one PathLeaf that matches their transaction and generate a Merkle inclusion proof showing that this specific PathLeaf is part of the committed sparse Merkle tree. This inclusion proof demonstrates to the verifier that the path being claimed is genuinely one of the valid ways defined in the original policy, without requiring the verifier to know what other paths exist or see the full policy structure.
+Each satisfying path through the POET becomes a PathLeaf—a fixed-size structure containing all the constraints required for that specific path. A PathLeaf bundles together the numeric limits (spending ranges, fee requirements), time restrictions (weekday and hour windows), address list references (pointers to allowlist/denylist Merkle roots), and nullifier configuration for stateful constraints applicable to that path. When a client wants to prove their transaction satisfies the policy, they select one PathLeaf that matches their transaction and generate a Merkle inclusion proof showing that this specific PathLeaf is part of the committed sparse Merkle tree. 
+
+This inclusion proof demonstrates to the verifier that the path being claimed is genuinely one of the valid ways defined in the original policy, without requiring the verifier to know what other paths exist or see the full policy structure.
 
 ### PathLeaf Structure Details
 
@@ -160,8 +162,8 @@ Zero-Knowledge Proof Generation Flow:
 └──────────────┘   │
                    ├─→ ┌─────────────────┐
 ┌──────────────┐   │   │  ZKP Circuits   │    ┌──────────┐
-│  PathLeaf    │ ──┤   │ (Groth16/PLONK/ │ ──→│  Proof   │
-│ Constraints  │   │   │    STARKs)      │    └──────────┘
+│  PathLeaf    │ ──┤   │                 │ ──→│  Proof   │
+│ Constraints  │   │   │                 │    └──────────┘
 └──────────────┘   │   └─────────────────┘          ↓
                    │            ↓                   │
 ┌──────────────┐   │      Proves:                   │
@@ -183,16 +185,26 @@ The proof generation process:
 3. All individual constraint proofs are combined into a single proof bundle
 4. Server verifies the proof without learning transaction details
 
-## Stateful Constraints Integration
+## Stateful Constraints
 
-For constraints that track state across multiple transactions - e.g. limiting a spending path to five uses per week or enforcing time-based access windows - the system leverages a dual-tree architecture. The static policy tree (described above) exists on the client side and contains immutable definitions of these constraints: maximum use counts, time windows, reset intervals, and scope identifiers. A separate global revocation tree tracks consumed nullifiers across all users to prevent reuse. Each signing operation generates a unique cryptographic commitment binding the constrained value (a counter index or timestamp), the user's policy, the constraint scope, the time epoch, and the transaction hash. This commitment is proven valid via zero-knowledge range proofs and then burned to the global revocation tree. Privacy is preserved because every signing operation burns exactly one commitment regardless of whether stateful constraints are actually enforced, preventing observers from distinguishing real enforcement from dummy operations or correlating uses by the same user.
+For constraints that track state across multiple transactions - e.g. limiting a spending path to five uses per week or enforcing time-based access windows - the system leverages a dual-tree architecture. The static policy tree (described above) exists on the client side and contains immutable definitions of these constraints: maximum use counts, time windows, reset intervals, and scope identifiers. A separate global revocation tree tracks consumed nullifiers across all users to prevent reuse. Each signing operation generates a unique cryptographic commitment binding the constrained value (a counter index or timestamp), the user's policy, the constraint scope, the time epoch, and the transaction hash. 
+
+This commitment is proven valid via zero-knowledge range proofs and then burned to the global revocation tree. Privacy is preserved because every signing operation burns exactly one commitment regardless of whether stateful constraints are actually enforced, preventing observers from distinguishing real enforcement from dummy operations or correlating uses by the same user.
 
 ## Blind Signing and Bitcoin Integration
 
-The final step connects the zero-knowledge proof to an actual Bitcoin signature through a blind signing protocol. After the server verifies the proof bundle—confirming the PathLeaf inclusion, validating the zero-knowledge proof, and checking that all nullifier commitments are fresh — it participates in a MuSig2 signing ceremony using the real BIP-341 sighash of the transaction. Critically, the server never sees the transaction contents: it only validates the cryptographic proof that some transaction satisfies the policy. The client binds the proof to specific transaction inputs using Schnorr proofs-of-knowledge that demonstrate control of the spending key and link that key to the proof bundle, preventing proof replay or substitution attacks. This architecture achieves clean separation of concerns: the client proves predicate satisfaction using zero-knowledge cryptography, the server conditionally signs based on proof validity, and the Bitcoin network validates the final transaction and signature according to consensus rules. The result is privacy-preserving conditional signing where policy enforcement happens without any party learning transaction details beyond what Bitcoin's public ledger reveals after broadcast. Note that the scheme is a) not true blind MuSig2, but rather a blind Schnorr protocol with MuSig2 tooling; specifically, we only maintain blindness in a client-server setting where Alice (the client) does not want to reveal her message to Bob (the signing server) but is also never asked to sign a message from Bob, and where Bob in turn never asks for a message or to see Alice's signature share but must ensure Alice is unable to execute Wagner's birthday attack or a one-more-signature forgery attack and b) the scheme is not claimed to be concurrently secure; parallel signing sessions are not supported, rate limiting backoffs are implemented, and the 'Poelstra trick' of randomly aborting sessions are all employed to keep Alice honest.
+The final step connects the zero-knowledge proof to an actual Bitcoin signature through a blind signing protocol. After the server verifies the proof bundle—confirming the PathLeaf inclusion, validating the zero-knowledge proof, and checking that all nullifier commitments are fresh, it participates in a MuSig2 signing ceremony, modeled off of the MercuryLayer 2-of-2 Musig2 ceremony. Critically, the server never sees the transaction contents: it only validates the cryptographic proof that some transaction satisfies the policy. 
+
+The client binds the proof to specific transaction inputs using Schnorr proofs-of-knowledge that demonstrate control of the spending key and link that key to the proof bundle, preventing proof replay or substitution attacks. This architecture achieves clean separation of concerns: the client proves predicate satisfaction using zero-knowledge cryptography, the server conditionally signs based on proof validity, and the Bitcoin network validates the final transaction and signature according to consensus rules.
+
+The result is privacy-preserving conditional signing where policy enforcement happens without any party learning transaction details beyond what Bitcoin's public ledger reveals after broadcast. Note that the scheme is not a generalizable blind MuSig2 (still an open research problem), but rather 2-of-2 client/server MuSig2 (as first proposed for the MercuryLayer statechain implementation - see https://gnusha.org/pi/bitcoindev/CAJvkSsc_rKneeVrLkTqXJDKcr+VQNBHVJyXVe=7PkkTZ+SruFQ@mail.gmail.com/); that is, we only attempt to maintain blindness in a client-server setting where Alice (the client) does not want to reveal her message to Bob (the signing server) but is also never asked to sign a message from Bob, and where Bob in turn never asks for a message or to see Alice's signature share.
+
+We focus on ensuring that Alice is unable to execute Wagner's birthday attack or a one-more-signature forgery attack. We do not verify that the signing request is well formed within the MuSig2 ceremony itself; instead, if a client is unable to produce valid ZKPs (which require a well-formed request), we abort before beginning the signing ceremony. The scheme is not claimed to be concurrently secure; parallel signing sessions for the same key are not supported, rate limiting with exponential backoffs as well as the 'Poelstra trick' of randomly aborting sessions are all employed to thwart a potentially malicious Alice.
 
 More reading on blind MuSig2 and predicate based signing can be found here:
 
 https://gnusha.org/pi/bitcoindev/CAJvkSsc_rKneeVrLkTqXJDKcr+VQNBHVJyXVe=7PkkTZ+SruFQ@mail.gmail.com/
+
 https://www.di.ens.fr/~fuchsbau/blindSchnorr.pdf
+
 https://eprint.iacr.org/2022/1676.pdf
